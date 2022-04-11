@@ -93,6 +93,17 @@ class TestRunner:
     ):
         assert self.reporter, "Uninitialized reporter!"
 
+        # envs = await asyncio.gather(*[
+        #         TestExecutionEnvironment.empty(
+        #             test_contract, self._is_test_fail_enabled, self.include_paths
+        #         ) for f in functions
+        #     ])
+        
+        # results = await asyncio.gather(*[
+        #     env.invoke_test_function(function["name"]) for env, function in zip(envs, functions)
+        # ])
+
+
         for function in functions:
             try:
                 env = await TestExecutionEnvironment.empty(
