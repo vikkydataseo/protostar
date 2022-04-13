@@ -1,4 +1,5 @@
 import asyncio
+import copy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Pattern
 
@@ -13,6 +14,7 @@ from starkware.starkware_utils.error_handling import StarkException
 from src.commands.test.cases import BrokenTest, FailedCase, PassedCase
 from src.commands.test.cheatable_syscall_handler import CheatableSysCallHandler
 from src.commands.test.collector import TestCollector
+from src.commands.test.contract_snapshot import ForkableStarknet
 from src.commands.test.reporter import TestReporter
 from src.commands.test.test_environment_exceptions import (
     MissingExceptException,
@@ -28,7 +30,6 @@ if TYPE_CHECKING:
 
 
 current_directory = Path(__file__).parent
-
 
 class TestRunner:
     reporter: Optional[TestReporter] = None
@@ -93,31 +94,24 @@ class TestRunner:
     ):
         assert self.reporter, "Uninitialized reporter!"
 
-        # envs = await asyncio.gather(*[
-        #         TestExecutionEnvironment.empty(
-        #             test_contract, self._is_test_fail_enabled, self.include_paths
-        #         ) for f in functions
-        #     ])
-        
-        # results = await asyncio.gather(*[
-        #     env.invoke_test_function(function["name"]) for env, function in zip(envs, functions)
-        # ])
-
+        try:
+            env_base = await TestExecutionEnvironment.empty(
+               test_contract, self._is_test_fail_enabled, self.include_paths
+            )
+        except StarkException as err:
+            self.reporter.report(
+                subject=test_subject,
+                case_result=BrokenTest(
+                    file_path=test_subject.test_path, exception=err
+                ),
+            )
+            return
 
         for function in functions:
-            try:
-                env = await TestExecutionEnvironment.empty(
-                    test_contract, self._is_test_fail_enabled, self.include_paths
-                )
-            except StarkException as err:
-                self.reporter.report(
-                    subject=test_subject,
-                    case_result=BrokenTest(
-                        file_path=test_subject.test_path, exception=err
-                    ),
-                )
-                return
-
+            # env = env_base.fork()
+            env = await TestExecutionEnvironment.empty(
+               test_contract, self._is_test_fail_enabled, self.include_paths
+            )
             try:
                 call_result = await env.invoke_test_function(function["name"])
                 self.reporter.report(
@@ -147,21 +141,31 @@ class ExpectedError:
 
 class TestExecutionEnvironment:
     def __init__(self, is_test_fail_enabled: bool, include_paths: List[str]):
-        self.starknet = None
+        self.starknet = None 
         self.test_contract = None
         self._expected_error: Optional[ExpectedError] = None
         self._is_test_fail_enabled = is_test_fail_enabled
         self._include_paths = include_paths
+    
+
+    def fork(self):
+        n_env = TestExecutionEnvironment(
+            is_test_fail_enabled=self._is_test_fail_enabled,
+            include_paths=self._include_paths
+        )
+        n_env.starknet = self.starknet.fork()
+        n_env.test_contract = self.test_contract.fork()
+        return n_env
 
     @classmethod
     async def empty(
         cls,
         test_contract: ContractDefinition,
         is_test_fail_enabled: bool,
-        include_paths: Optional[List[str]] = None,
+        include_paths: Optional[List[str]] = None
     ):
         env = cls(is_test_fail_enabled, include_paths or [])
-        env.starknet = await Starknet.empty()
+        env.starknet = await ForkableStarknet.empty()
         env.test_contract = await env.starknet.deploy(contract_def=test_contract)
         return env
 
