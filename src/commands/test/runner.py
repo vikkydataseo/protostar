@@ -108,10 +108,7 @@ class TestRunner:
             return
 
         for function in functions:
-            # env = env_base.fork()
-            env = await TestExecutionEnvironment.empty(
-               test_contract, self._is_test_fail_enabled, self.include_paths
-            )
+            env = env_base.fork()
             try:
                 call_result = await env.invoke_test_function(function["name"])
                 self.reporter.report(
