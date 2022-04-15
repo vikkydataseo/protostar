@@ -14,7 +14,7 @@ from starkware.starkware_utils.error_handling import StarkException
 from src.commands.test.cases import BrokenTest, FailedCase, PassedCase
 from src.commands.test.cheatable_syscall_handler import CheatableSysCallHandler
 from src.commands.test.collector import TestCollector
-from src.commands.test.contract_snapshot import ForkableStarknet
+from src.commands.test.contract_fork import ForkableStarknet
 from src.commands.test.reporter import TestReporter
 from src.commands.test.test_environment_exceptions import (
     MissingExceptException,
@@ -154,7 +154,7 @@ class TestExecutionEnvironment:
             include_paths=self._include_paths
         )
         n_env.starknet = self.starknet.fork()
-        n_env.test_contract = self.test_contract.fork()
+        n_env.test_contract = n_env.starknet.plug_from_different_state(self.test_contract)
         return n_env
 
     @classmethod
@@ -165,7 +165,8 @@ class TestExecutionEnvironment:
         include_paths: Optional[List[str]] = None
     ):
         env = cls(is_test_fail_enabled, include_paths or [])
-        env.starknet = await ForkableStarknet.empty()
+        # env.starknet = await ForkableStarknet.empty()
+        env.starknet = await Starknet.empty()
         env.test_contract = await env.starknet.deploy(contract_def=test_contract)
         return env
 
