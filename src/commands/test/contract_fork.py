@@ -14,7 +14,7 @@ class ForkableStarknet(Starknet):
 
     def plug_from_different_state(self, deployed_contact: StarknetContract):
         return StarknetContract(
-            state=self.state.copy(),
+            state=self.state,
             abi=copy.deepcopy(deployed_contact.abi),
             contract_address=deployed_contact.contract_address,
             deploy_execution_info=copy.deepcopy(deployed_contact.deploy_execution_info),
