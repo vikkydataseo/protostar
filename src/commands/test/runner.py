@@ -17,11 +17,12 @@ from src.commands.test.collector import TestCollector
 from src.commands.test.contract_fork import ForkableStarknet
 from src.commands.test.reporter import TestReporter
 from src.commands.test.test_environment_exceptions import (
+    ExceptMismatchException,
     MissingExceptException,
     ReportedException,
     StarkReportedException,
 )
-from src.commands.test.utils import TestSubject
+from src.commands.test.utils import TestSubject, extract_core_info_from_stark_ex_message
 from src.utils.modules import replace_class
 from src.utils.starknet_compilation import StarknetCompiler
 
@@ -76,7 +77,7 @@ class TestRunner:
             compiled_test = StarknetCompiler(
                 include_paths=self.include_paths,
                 disable_hint_validation=True,
-            ).compile_contract(test_subject.test_path)
+            ).compile_contract(test_subject.test_path, add_debug_info=True)
 
             self.reporter.file_entry(test_subject.test_path.name)
             await self._run_test_functions(
@@ -115,7 +116,6 @@ class TestRunner:
                     subject=test_subject,
                     case_result=PassedCase(tx_info=call_result),
                 )
-
             except ReportedException as err:
                 self.reporter.report(
                     subject=test_subject,
@@ -134,6 +134,14 @@ class ExpectedError:
 
     def __str__(self) -> str:
         return f"(error_type: {self.name}; error_message: {self.message})"
+
+    def match(self, other: StarkException):
+
+        return (self.name is None or self.name == other.code.name) and (
+            self.message is None
+            or self.message
+            in (extract_core_info_from_stark_ex_message(other.message) or "")
+        )
 
 
 class TestExecutionEnvironment:
@@ -201,21 +209,15 @@ class TestExecutionEnvironment:
             return call_result
 
         except StarkException as ex:
-            is_ex_expected = (
-                self._expected_error is not None
-                and (
-                    self._expected_error.name is None
-                    or self._expected_error.name == ex.code.name
-                )
-                and (
-                    self._expected_error.message is None
-                    or (ex.message or "").startswith(self._expected_error.message)
-                )
-            )
-
-            if not is_ex_expected:
+            if self._expected_error:
+                if not self._expected_error.match(ex):
+                    raise ExceptMismatchException(
+                        expected_name=self._expected_error.name,
+                        expected_message=self._expected_error.message,
+                        received=ex,
+                    ) from ex
+            else:
                 raise StarkReportedException(ex) from ex
-
         finally:
             CairoFunctionRunner.run_from_entrypoint = original_run_from_entrypoint
             self._expected_error = None
