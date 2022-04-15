@@ -12,7 +12,7 @@ class ForkableStarknet(Starknet):
     async def empty(cls, general_config: Optional[StarknetGeneralConfig] = None) -> "Starknet":
         return ForkableStarknet(state=await StarknetState.empty(general_config=general_config))
 
-    async def plug_from_different_state(self, deployed_contact: StarknetContract):
+    def plug_from_different_state(self, deployed_contact: StarknetContract):
         return StarknetContract(
             state=self.state.copy(),
             abi=copy.deepcopy(deployed_contact.abi),

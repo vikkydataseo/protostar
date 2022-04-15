@@ -162,8 +162,7 @@ class TestExecutionEnvironment:
         include_paths: Optional[List[str]] = None
     ):
         env = cls(is_test_fail_enabled, include_paths or [])
-        # env.starknet = await ForkableStarknet.empty()
-        env.starknet = await Starknet.empty()
+        env.starknet = await ForkableStarknet.empty()
         env.test_contract = await env.starknet.deploy(contract_def=test_contract)
         return env
 
