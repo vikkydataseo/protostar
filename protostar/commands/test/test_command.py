@@ -14,8 +14,8 @@ from protostar.commands.test.test_result_formatter import (
 )
 from protostar.commands.test.testing_live_logger import TestingLiveLogger
 from protostar.compiler import ProjectCairoPathBuilder
-from protostar.protostar_exception import ProtostarException
 from protostar.io.log_color_provider import LogColorProvider
+from protostar.protostar_exception import ProtostarException
 from protostar.self.cache_io import CacheIO
 from protostar.self.protostar_directory import ProtostarDirectory
 from protostar.starknet.compiler.pass_managers import (
