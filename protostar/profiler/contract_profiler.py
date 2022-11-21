@@ -9,6 +9,7 @@ from starkware.cairo.lang.tracer.tracer_data import TracerData
 from starkware.cairo.lang.vm.relocatable import RelocatableValue
 from starkware.cairo.lang.vm.memory_segments import MemorySegmentManager
 from starkware.cairo.lang.vm.builtin_runner import BuiltinRunner, SimpleBuiltinRunner
+from starkware.starknet.core.os.syscall_utils import SysCallInfo
 
 Address = int
 FunctionID = str
@@ -330,6 +331,26 @@ def build_builtin_samples(
             samples.append(Sample(value=1, callstack=callstack))
     return samples
 
+def build_write_storage_samples(
+    syscalls: dict[RelocatableValue, tuple[str, SysCallInfo]],
+    instructions: Instructions,
+    tracer_data: TracerDataManager,
+    segment_offsets: dict[int, int],
+) -> list[Sample]:
+        samples: list[Sample] = []
+        write_storage_syscalls = { k: v for k, v in syscalls.items() if v[0] == "storage_write" }
+        accessed_by, pc_to_callstack = get_last_accessed(tracer_data)
+        for address, _ in write_storage_syscalls.items():
+            segment_offset = segment_offsets[address.segment_index]
+            if segment_offset + address.offset in accessed_by:
+                responsible_pc = accessed_by[segment_offset + address.offset]
+                callstack = [
+                    instructions.get_by_address(frame_pc)
+                    for frame_pc in pc_to_callstack[responsible_pc]
+                ]
+                samples.append(Sample(value=1, callstack=callstack))
+        return samples
+
 
 def build_profile(
     tracer_data: TracerDataManager,
@@ -337,6 +358,7 @@ def build_profile(
     segment_offsets: dict[int, int],
     accessed_memory: set[RelocatableValue],
     builtins: dict[str, BuiltinRunner],
+    syscalls: dict[RelocatableValue, tuple[str, SysCallInfo]],
 ) -> RuntimeProfile:
     function_list = collect_contract_functions(tracer_data)
     instructions_list = create_instruction_list(function_list, tracer_data)
@@ -361,12 +383,16 @@ def build_profile(
     }
 
     callstacks_syscall = build_call_callstacks(instructions, tracer_data)
+    storage_write_samples = build_write_storage_samples(
+        syscalls, instructions, tracer_data, segment_offsets
+    )
     profile = RuntimeProfile(
         functions=function_list,
         instructions=instructions_list,
         samples={
             "steps": step_samples,
             "memory holes": memhole_samples,
+            "storage write": storage_write_samples,
             "all builtins": list(
                 itertools.chain.from_iterable(builtin_samples.values())
             ),

@@ -40,6 +40,7 @@ from starkware.starkware_utils.error_handling import (
     StarkException,
     wrap_with_stark_exception,
 )
+from starkware.starknet.core.os.syscall_utils import SysCallInfo
 
 from protostar.profiler.contract_profiler import (
     RuntimeProfile,
@@ -47,6 +48,7 @@ from protostar.profiler.contract_profiler import (
     build_profile,
 )
 from protostar.profiler.pprof import serialize, to_protobuf
+from protostar.profiler.profilable_syscall_handler import ProfilableSysCallHandler
 from protostar.profiler.transaction_profiler import merge_profiles
 from protostar.starknet.cheatable_cached_state import CheatableCachedState
 from protostar.starknet.cheatable_cairo_function_runner import (
@@ -129,8 +131,10 @@ class CheatableExecuteEntryPoint(ExecuteEntryPoint):
             RelocatableValue, os_context[starknet_abi.SYSCALL_PTR_OFFSET]
         )
 
+        syscall_handler_class = ProfilableSysCallHandler if self.profiling else CheatableSysCallHandler
+
         # region Modified Starknet code.
-        syscall_handler = CheatableSysCallHandler(
+        syscall_handler = syscall_handler_class(
             execute_entry_point_cls=CheatableExecuteEntryPoint,
             tx_execution_context=tx_execution_context,
             state=state,
@@ -259,7 +263,8 @@ class CheatableExecuteEntryPoint(ExecuteEntryPoint):
         # region Modified Starknet code.
 
         if self.profiling:
-            self.append_runtime_profile(runner, contract_class, entry_point)
+            assert isinstance(syscall_handler, ProfilableSysCallHandler)
+            self.append_runtime_profile(runner, contract_class, entry_point, syscall_handler)
             self.pop_contract_callstack()
             if not CheatableExecuteEntryPoint.contract_callstack:
                 merge_and_save(CheatableExecuteEntryPoint.samples)
@@ -285,6 +290,7 @@ class CheatableExecuteEntryPoint(ExecuteEntryPoint):
         runner: CairoFunctionRunner,
         contract_class: ContractClass,
         entry_point: ContractEntryPoint,
+        syscall_handler: ProfilableSysCallHandler,
     ):
         runner.relocate()
         profile = get_profile(
@@ -293,6 +299,7 @@ class CheatableExecuteEntryPoint(ExecuteEntryPoint):
             trace=runner.relocated_trace,
             debug_info=runner.get_relocated_debug_info(),
             runner=runner,
+            syscalls=syscall_handler.address_to_syscall_info
         )
         current_callstack = CheatableExecuteEntryPoint.contract_callstack.copy()
         CheatableExecuteEntryPoint.samples.append(
@@ -306,6 +313,7 @@ def get_profile(
     trace: List[TraceEntry[int]],
     debug_info: DebugInfo,
     runner: CairoFunctionRunner,
+    syscalls: dict[RelocatableValue, tuple[str,SysCallInfo]]
 ):
     tracer_data = TracerDataManager(
         program=program,
@@ -322,7 +330,8 @@ def get_profile(
         runner.segments,
         runner.segment_offsets,
         runner.accessed_addresses,
-        runner.builtin_runners,  # type: ignore
+        runner.builtin_runners,
+        syscalls=syscalls,
     )
     return profile
 
